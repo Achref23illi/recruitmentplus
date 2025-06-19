@@ -5,6 +5,8 @@ class CandidatesController {
     // Get all candidates with filtering
     async getAllCandidates(req, res, next) {
         try {
+            console.log('getAllCandidates called with query:', req.query);
+            
             const {
                 search,
                 skills,
@@ -12,7 +14,7 @@ class CandidatesController {
                 experience_max,
                 locations,
                 page = 1,
-                page_size = 10
+                page_size = 50
             } = req.query;
 
             // Build query
@@ -37,25 +39,38 @@ class CandidatesController {
 
             // Build skills filter
             if (skills && Array.isArray(skills)) {
-                const skillDocs = await Skill.find({ name: { $in: skills } });
-                const skillIds = skillDocs.map(s => s._id);
-                query['skills.skill_id'] = { $in: skillIds };
+                try {
+                    const skillDocs = await Skill.find({ name: { $in: skills } });
+                    const skillIds = skillDocs.map(s => s._id);
+                    query['skills.skill_id'] = { $in: skillIds };
+                } catch (skillError) {
+                    console.warn('Error filtering by skills:', skillError.message);
+                }
             }
 
             // Pagination
             const skip = (parseInt(page) - 1) * parseInt(page_size);
             const limit = parseInt(page_size);
 
-            // Execute query
+            console.log('Executing query:', JSON.stringify(query));
+
+            // Execute query with error handling
             const [candidates, total] = await Promise.all([
                 CandidateProfile.find(query)
                     .populate('user_id', 'firstName lastName email')
-                    .populate('skills.skill_id')
+                    .populate({
+                        path: 'skills.skill_id',
+                        model: 'Skill',
+                        select: 'name'
+                    })
                     .skip(skip)
                     .limit(limit)
-                    .sort('-created_at'),
+                    .sort('-created_at')
+                    .lean(), // Use lean() for better performance
                 CandidateProfile.countDocuments(query)
             ]);
+
+            console.log(`Found ${candidates.length} candidates out of ${total} total`);
 
             res.json({
                 candidates,
@@ -65,7 +80,16 @@ class CandidatesController {
                 total_pages: Math.ceil(total / parseInt(page_size))
             });
         } catch (error) {
-            next(error);
+            console.error('Error in getAllCandidates:', error);
+            res.status(500).json({
+                error: 'Failed to fetch candidates',
+                message: error.message,
+                candidates: [], // Return empty array as fallback
+                total: 0,
+                page: 1,
+                page_size: parseInt(req.query.page_size || 50),
+                total_pages: 0
+            });
         }
     }
 
@@ -527,6 +551,117 @@ class CandidatesController {
             });
         } catch (error) {
             next(error);
+        }
+    }
+
+    // Debug endpoint to test database connection
+    async debugCandidates(req, res, next) {
+        try {
+            console.log('Debug endpoint called');
+            
+            // Test database connection
+            const mongoose = require('mongoose');
+            const connectionState = mongoose.connection.readyState;
+            const states = ['disconnected', 'connected', 'connecting', 'disconnecting'];
+            
+            console.log('MongoDB connection state:', states[connectionState]);
+            
+            // Try to count candidates
+            let candidateCount = 0;
+            let sampleCandidate = null;
+            
+            try {
+                candidateCount = await CandidateProfile.countDocuments();
+                sampleCandidate = await CandidateProfile.findOne().populate('user_id', 'firstName lastName email');
+                console.log('Found', candidateCount, 'candidates in database');
+            } catch (dbError) {
+                console.error('Database query error:', dbError);
+            }
+            
+            res.json({
+                status: 'Debug endpoint working',
+                mongodb_state: states[connectionState],
+                candidate_count: candidateCount,
+                sample_candidate: sampleCandidate,
+                timestamp: new Date().toISOString()
+            });
+        } catch (error) {
+            console.error('Debug endpoint error:', error);
+            res.status(500).json({
+                error: 'Debug endpoint failed',
+                message: error.message
+            });
+        }
+    }
+
+    // Mock candidates endpoint for testing
+    async getMockCandidates(req, res, next) {
+        try {
+            const mockCandidates = [
+                {
+                    _id: "mock1",
+                    user_id: {
+                        firstName: "John",
+                        lastName: "Doe",
+                        email: "john.doe@example.com"
+                    },
+                    phone: "+1234567890",
+                    location: "New York, NY",
+                    summary: "Experienced software developer",
+                    years_of_experience: 5,
+                    skills: [
+                        { skill_id: { name: "JavaScript" }, proficiency_level: 4 },
+                        { skill_id: { name: "React" }, proficiency_level: 4 },
+                        { skill_id: { name: "Node.js" }, proficiency_level: 3 }
+                    ],
+                    work_experience: [
+                        { position: "Frontend Developer", company_name: "Tech Corp" }
+                    ],
+                    job_preferences: {
+                        desired_salary_min: 80000
+                    },
+                    created_at: new Date()
+                },
+                {
+                    _id: "mock2",
+                    user_id: {
+                        firstName: "Jane",
+                        lastName: "Smith",
+                        email: "jane.smith@example.com"
+                    },
+                    phone: "+1234567891",
+                    location: "San Francisco, CA",
+                    summary: "Full-stack developer with DevOps experience",
+                    years_of_experience: 3,
+                    skills: [
+                        { skill_id: { name: "Python" }, proficiency_level: 4 },
+                        { skill_id: { name: "Django" }, proficiency_level: 3 },
+                        { skill_id: { name: "Docker" }, proficiency_level: 3 }
+                    ],
+                    work_experience: [
+                        { position: "Backend Developer", company_name: "StartupXYZ" }
+                    ],
+                    job_preferences: {
+                        desired_salary_min: 75000
+                    },
+                    created_at: new Date()
+                }
+            ];
+
+            res.json({
+                candidates: mockCandidates,
+                total: mockCandidates.length,
+                page: 1,
+                page_size: 50,
+                total_pages: 1,
+                message: "Mock data - check if database is properly connected"
+            });
+        } catch (error) {
+            console.error('Error in getMockCandidates:', error);
+            res.status(500).json({
+                error: 'Failed to fetch mock candidates',
+                message: error.message
+            });
         }
     }
 }

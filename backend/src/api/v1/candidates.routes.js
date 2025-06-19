@@ -3,6 +3,10 @@ const router = express.Router();
 const candidatesController = require('../../controllers/candidates.controller');
 const { authMiddleware } = require('../../middleware/auth.middleware');
 
+// Debug route (add this first to avoid conflicts)
+router.get('/debug', candidatesController.debugCandidates);
+router.get('/mock', candidatesController.getMockCandidates);
+
 // Public routes
 router.get('/', candidatesController.getAllCandidates);
 router.get('/:id', candidatesController.getCandidateById);
