@@ -9,8 +9,7 @@ import { Company } from '@/types';
 import SearchFilterBar, { ViewMode, FilterState } from './components/SearchFilterBar';
 import CompaniesCard from './components/CompaniesCard';
 import CompanyDetailModal from '@/components/companies/CompanyDetailModal';
-import axios from 'axios';
-import { API_BASE_URL } from '@/services/api/config';
+import apiClient from '@/services/api/axios-client';
 
 const CompaniesPage = () => {
   const { colors, theme } = useTheme();
@@ -46,7 +45,7 @@ const CompaniesPage = () => {
       setIsLoading(true);
       console.log('Fetching companies from MongoDB...');
       
-      const response = await axios.get(`${API_BASE_URL}/companies`, {
+      const response = await apiClient.get('/companies', {
         params: {
           page: 1,
           page_size: 50
@@ -54,7 +53,7 @@ const CompaniesPage = () => {
       });
 
       // Transform the backend data to match our frontend Company interface
-      const transformedCompanies = response.data.companies.map((company: any) => ({
+      const transformedCompanies = response.companies.map((company: any) => ({
         id: company._id,
         name: company.name || 'Unknown Company',
         industry: company.industry || 'Not specified',

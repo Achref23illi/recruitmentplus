@@ -4,8 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useTheme } from '@/app/context/ThemeContext';
 import SearchFilterBar, { ViewMode, FilterState } from './components/SearchFilterBar';
 import CandidatesCard, { Candidate } from './components/CandidatesCard';
-import axios from 'axios';
-import { API_BASE_URL } from '@/services/api/config';
+import apiClient from '@/services/api/axios-client';
 
 const CandidatesPage = () => {
   const { colors } = useTheme();
@@ -40,16 +39,48 @@ const CandidatesPage = () => {
       setLoading(true);
       setError(null);
       
-      const response = await axios.get(`${API_BASE_URL}/candidates`, {
-        params: {
-          page: 1,
-          page_size: 50
+      console.log('Fetching candidates from: /candidates');
+      
+      // First try to get real candidates
+      let response;
+      try {
+        response = await apiClient.get('/candidates', {
+          params: {
+            page: 1,
+            page_size: 50
+          }
+        });
+        console.log('API Response:', response.data);
+      } catch (apiError) {
+        console.error('API Error:', apiError);
+        console.log('Trying debug endpoint...');
+        
+        // Try debug endpoint
+        try {
+          const debugResponse = await apiClient.get('/candidates/debug');
+          console.log('Debug Response:', debugResponse.data);
+        } catch (debugError) {
+          console.error('Debug endpoint also failed:', debugError);
         }
-      });
+        
+        // Try mock endpoint as fallback
+        try {
+          response = await apiClient.get('/candidates/mock');
+          console.log('Using mock data:', response.data);
+        } catch (mockError) {
+          console.error('Mock endpoint also failed:', mockError);
+          throw new Error(`API not accessible: ${apiError.message}`);
+        }
+      }
+
+      // Check if response has expected structure
+      if (!response || !Array.isArray(response.candidates)) {
+        throw new Error('Invalid API response structure');
+      }
 
       // Transform the backend data to match our frontend Candidate interface
-      const transformedCandidates = response.data.candidates.map((candidate: any) => ({
-        id: candidate._id,
+      const transformedCandidates = response.candidates.map((candidate: any) => ({
+        id: candidate._id || candidate.id,
         name: `${candidate.user_id?.firstName || ''} ${candidate.user_id?.lastName || ''}`.trim() || 'Unknown',
         email: candidate.user_id?.email || '',
         phone: candidate.phone || 'N/A',
@@ -65,10 +96,17 @@ const CandidatesPage = () => {
         rating: 4, // Default rating
       }));
 
+      console.log('Transformed candidates:', transformedCandidates);
       setCandidates(transformedCandidates);
-    } catch (err) {
+      
+      // Show success message if using mock data
+      if (response.message) {
+        console.warn('Using fallback data:', response.message);
+      }
+      
+    } catch (err: any) {
       console.error('Error fetching candidates:', err);
-      setError('Failed to load candidates. Please try again later.');
+      setError(`Failed to load candidates: ${err.message}. Please check your backend connection.`);
     } finally {
       setLoading(false);
     }
@@ -127,7 +165,7 @@ const CandidatesPage = () => {
         try {
           setLoadingCandidate(true);
           // Fetch full candidate details from API
-          const response = await axios.get(`${API_BASE_URL}/candidates/${candidateId}`);
+          const response = await apiClient.get(`/candidates/${candidateId}`);
           setSelectedCandidate(response.data);
           setShowCandidateModal(true);
         } catch (err) {
